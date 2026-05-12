@@ -37,9 +37,9 @@ A rigorous empirical comparison of the classical **Apriori algorithm** against *
 
 | Algorithm | Chess@80% | Chess@90% | Accidents@90% | Connect |
 |-----------|-----------|-----------|---------------|---------|
-| Apriori-Baseline | 28.10 s | 2.26 s | 19.41 s | ❌ Intractable |
-| Apriori-HashTree | N/A | 1.98 s | 39.20 s | ❌ Intractable |
-| Apriori-Tidset | 17.41 s | 8.12 s | 7.84 s | ❌ Intractable |
+| Apriori-Baseline | 28.10 s | 2.26 s | 19.41 s |  Intractable |
+| Apriori-HashTree | N/A | 1.98 s | 39.20 s |  Intractable |
+| Apriori-Tidset | 17.41 s | 8.12 s | 7.84 s |  Intractable |
 | **ProbDF (2024)** | **2.42 s** | **0.95 s** | **35.57 s** | **45.58 s (@90%)** |
 
 ---
@@ -170,7 +170,7 @@ Vertical TID-set representation using Python `bytearray` bitmasks.
 **Memory reduction:** 224× vs Python set.  
 **Empirical result:** 1.61× speedup, 5.5 MB at Chess@80%.
 
-### 4. ProbDF — State-of-the-Art (Sadeequllah et al., 2024) ⭐
+### 4. ProbDF — State-of-the-Art (Sadeequllah et al., 2024) 
 Probabilistic Depth-First FIM with Probabilistic Support Prediction Model (PSPM).  
 **Key innovation:** Stops reading transaction data after Phase 1.  
 **Space complexity:** O(|F1|²) — independent of dataset size.  
@@ -216,6 +216,5 @@ This project is licensed under the MIT License — see [LICENSE](LICENSE) for de
 
 <div align="center">
 
-**Made with 📊 and ☕ at GIKI**
 
 </div>
