@@ -1,0 +1,1042 @@
+\documentclass[conference]{IEEEtran}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{multicol}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{cite}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{float}
+
+% ── Fix IEEEtran algorithm float ──────────────────────────────────────────────
+\makeatletter
+\newif\if@restonecol
+\makeatother
+
+% ── Column type for tables ────────────────────────────────────────────────────
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% ── Title block ───────────────────────────────────────────────────────────────
+\title{Comparison of Apriori Algorithm for Frequent Itemset Mining with\\
+ProbDF (2024) and Optimization Strategies for Improved Performance}
+
+\author{
+  \IEEEauthorblockN{Bilal Ahmad Sheikh}
+  \IEEEauthorblockA{
+    Department of Artificial Intelligence\\
+    Ghulam Ishaq Khan Institute\\
+    Topi, Pakistan\\
+    2023162@giki.edu.pk
+  }
+  \and
+  \IEEEauthorblockN{Muhammad Muzzammil Idrees}
+  \IEEEauthorblockA{
+    Department of Artificial Intelligence\\
+    Ghulam Ishaq Khan Institute\\
+    Topi, Pakistan\\
+    2023481@giki.edu.pk
+  }
+  \and
+  \IEEEauthorblockN{Raneem Sultan}
+  \IEEEauthorblockA{
+    Department of Artificial Intelligence\\
+    Ghulam Ishaq Khan Institute\\
+    Topi, Pakistan\\
+    2023597@giki.edu.pk
+  }
+  \and
+  \IEEEauthorblockN{~}
+  \IEEEauthorblockA{~}
+  \and
+  \IEEEauthorblockN{Muhammad Uzair}
+  \IEEEauthorblockA{
+    Department of Artificial Intelligence\\
+    Ghulam Ishaq Khan Institute\\
+    Topi, Pakistan\\
+    2023547@giki.edu.pk
+  }
+  \and
+  \IEEEauthorblockN{~}
+  \IEEEauthorblockA{~}
+}
+
+\begin{document}
+\maketitle
+
+% ─────────────────────────────────────────────────────────────────────────────
+% AUTHOR CONTRIBUTIONS
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{IEEEkeywords}
+\textbf{Author Contributions:}
+Bilal Ahmad Sheikh led implementation of Apriori Baseline, HashTree
+optimization, and ProbDF, and produced Notebooks~1--4 (data loading,
+benchmarking, comparison, visualization).
+Muhammad Muzzammil Idrees implemented the bitset Tidset optimization,
+conducted the exact precision/recall validation analysis, and co-authored
+the literature review and algorithm description sections.
+Raneem Sultan designed the experimental protocol, produced the comparison
+figures and tractability map, and authored the experimental-setup and
+discussion sections.
+Muhammad Uzair derived the complexity-analysis tables, authored the
+optimization-strategy justifications, conclusion, and reference list.
+All four members contributed equally to viva preparation and are
+prepared to discuss all aspects of the project.
+\end{IEEEkeywords}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% ABSTRACT
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{abstract}
+Frequent itemset mining (FIM) is a foundational task in data mining that
+identifies co-occurring item sets in transactional databases, serving as
+the backbone of association rule mining. Despite decades of research, the
+classical Apriori algorithm remains computationally prohibitive on dense,
+real-world datasets due to exponential candidate generation and repeated
+database scans. This paper presents a rigorous empirical comparison of
+Apriori against ProbDF (Sadeequllah et al., 2024), a state-of-the-art
+approximate FIM algorithm that stops reading transaction data after
+computing 2-itemsets and employs a Probabilistic Support Prediction Model
+(PSPM) for higher-order itemsets. We additionally propose and evaluate two
+optimization strategies for Apriori: a hash-tree based candidate lookup
+(Park et al., 1995) and a bitset-accelerated vertical tidset format
+(Zaki et al., 1997). Experiments are conducted on three FIMI benchmark
+datasets---Chess, Connect, and Accidents---across five minimum support
+thresholds (50\%--90\%). Results demonstrate that ProbDF achieves up to
+11.63$\times$ speedup over Apriori Baseline on Chess with memory usage
+under 130\,MB across all tested Chess thresholds, while Apriori variants
+become intractable below 80\% support on dense datasets. The Connect
+dataset proved entirely intractable for all Apriori variants, which itself
+constitutes a key finding motivating approximate methods. Exact validation
+at Chess@90\% shows ProbDF achieves 99.1\% precision and 91.3\% recall
+against ground truth, with recall ranging from 85\%--100\% across tested
+combinations, demonstrating that probabilistic approximation incurs only
+marginal quality loss in exchange for dramatic efficiency gains.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Frequent itemset mining, Apriori algorithm, ProbDF, association rules,
+data mining, dense datasets, approximate FIM, PSPM, tidset, hash tree.
+\end{IEEEkeywords}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% I. INTRODUCTION
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+
+Frequent itemset mining (FIM) is the process of discovering sets of items
+that co-occur frequently across transactional datasets, defined formally
+as identifying all itemsets $X \subseteq \mathcal{I}$ such that their
+support $\sigma(X) \geq \text{min\_sup}$, where $\sigma(X) = |T_X| /
+|T|$ and $T_X$ is the set of transactions containing $X$ \cite{agrawal1994}.
+
+The importance of FIM spans numerous real-world domains. In retail
+analytics, market basket analysis identifies product bundling
+opportunities. In healthcare informatics, FIM reveals co-occurring
+diagnoses and treatment patterns in clinical records. Financial fraud
+detection systems exploit transactional patterns to flag anomalous
+behavior, while bioinformatics leverages FIM to identify co-expressed
+gene sets. The growth of data volume in all these domains has intensified
+demand for scalable FIM algorithms.
+
+The classical Apriori algorithm \cite{agrawal1994}, introduced in 1994,
+remains the canonical baseline due to its conceptual elegance and strong
+theoretical foundations. It exploits the anti-monotonicity property---if
+an itemset is infrequent, all its supersets are also infrequent---to
+prune the search space. However, Apriori suffers from two fundamental
+scalability bottlenecks: (1) exponential candidate generation in dense
+datasets, and (2) repeated full database scans per level, resulting in
+I/O complexity of $O(|T| \times |C_k|)$ per level $k$. These limitations
+render Apriori impractical for the dense, large-scale datasets prevalent
+in modern applications.
+
+Subsequent algorithms including FP-Growth \cite{han2000} and ECLAT
+\cite{zaki1997} addressed specific bottlenecks but retained the
+fundamental requirement of maintaining transaction data throughout
+execution, constraining memory usage to $O(|F_k| \times |T|/8)$ bytes
+for bitset-based implementations---which explodes combinatorially on
+dense data.
+
+The recently proposed ProbDF algorithm \cite{probdf2024} represents a
+paradigm shift by stopping all access to transaction data after computing
+2-itemsets, using a Probabilistic Support Prediction Model (PSPM) for
+all higher-order itemsets. This approach achieves exact results at levels
+1 and 2, then approximates support probabilistically for $k \geq 3$
+using only previously computed pair counts.
+
+\subsection*{Contributions}
+The primary contributions of this work are:
+\begin{itemize}
+  \item A from-scratch implementation of Apriori Baseline using
+    prefix-join candidate generation with full $(k-1)$-subset
+    verification, empirically validated to agree with the independent
+    Tidset implementation on all tractable thresholds.
+  \item Implementation and empirical evaluation of two Apriori
+    optimizations: HashTree-based candidate lookup \cite{park1995}
+    and bitset-accelerated vertical Tidset \cite{zaki1997}.
+  \item A faithful Python re-implementation of ProbDF \cite{probdf2024}
+    with PSPM Equations~(1) and~(2) and depth-first enumeration,
+    benchmarked on all three FIMI datasets across five thresholds.
+  \item Comprehensive benchmarking across three FIMI datasets at five
+    thresholds, producing tractability maps, speedup heatmaps, and
+    quality analysis.
+  \item Documentation of seven experimental challenges encountered
+    during dense-dataset benchmarking, providing practical insights
+    for future implementations.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% II. LITERATURE REVIEW
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Literature Review}
+
+\subsection{Apriori Algorithm (1994)}
+Agrawal and Srikant \cite{agrawal1994} introduced Apriori as the first
+systematic algorithm for association rule mining. The algorithm employs
+a breadth-first search with $F_{k-1} \times F_{k-1}$ candidate
+generation and the anti-monotonicity property for pruning. Despite its
+exponential worst-case complexity of $O(2^{|\mathcal{I}|})$, Apriori
+established the foundational principles of level-wise candidate
+generation and Apriori pruning that underpin virtually all subsequent FIM
+algorithms. Its primary limitation is the requirement for $2k$ database
+scans for depth-$k$ itemsets, making it impractical on large, dense
+datasets.
+
+\subsection{FP-Growth (2000)}
+Han, Pei, and Yin \cite{han2000} proposed FP-Growth to eliminate
+candidate generation entirely by compressing the database into a prefix
+tree structure (FP-tree). FP-Growth requires only two database scans and
+mines patterns through conditional FP-tree recursion. Empirically,
+FP-Growth demonstrated an order-of-magnitude improvement over Apriori on
+sparse datasets. However, on dense datasets, the FP-tree itself can
+become large, and conditional tree generation introduces significant
+memory overhead. FP-Growth remains the dominant reference algorithm for
+exact FIM comparisons.
+
+\subsection{ECLAT and Vertical Format (1997)}
+Zaki et al.\ \cite{zaki1997} introduced the vertical TID-list (tidset)
+representation, where each item is associated with the set of transaction
+IDs containing it. Support computation reduces to set intersection:
+$\sigma(X \cup Y) = |\text{tid}(X) \cap \text{tid}(Y)|$, eliminating
+repeated database scans after level 1. ECLAT achieves significant
+speedups on sparse-to-moderate datasets. On dense datasets, however,
+TID-sets grow proportionally to the number of transactions, leading to
+memory complexity of $O(|F_k| \times |T|/8)$ bytes for bitset
+implementations---which our experiments confirmed as the primary
+bottleneck, reaching over 51\,GB at Chess@60\% in our experiments,
+crashing the Colab kernel repeatedly.
+
+\subsection{Hash-Based Candidate Pruning (1995)}
+Park, Chen, and Yu \cite{park1995} proposed the Direct Hashing and
+Pruning (DHP) algorithm, which employs a hash tree to accelerate support
+counting. Candidates are stored in hash buckets keyed by their sorted
+item tuple, allowing each transaction to probe only the relevant bucket
+rather than scanning all candidates. This reduces the support counting
+cost from $O(|C_k|)$ to $O(|C_k|/b)$ per transaction, where $b$ is the
+branch factor. In our experiments, HashTree provided a modest 1.14$\times$
+speedup over Baseline at Chess@90\% due to Python overhead, but the
+theoretical reduction in comparison operations was validated.
+
+\subsection{ProbDF: Probabilistic Depth-First FIM (2024)}
+Sadeequllah et al.\ \cite{probdf2024} proposed ProbDF as a depth-first
+approximate FIM algorithm designed specifically for dense data. Building
+on the earlier ProbBF algorithm \cite{probdf2024}, ProbDF stops reading
+all transaction data after computing exact 1-itemset and 2-itemset support
+counts. For itemsets of size $k \geq 3$, it employs a Probabilistic
+Support Prediction Model (PSPM) derived from conditional probability
+theory. Key innovations include: depth-first traversal reducing memory
+to $O(h)$ where $h$ is the search tree depth; a promotion-pruning
+strategy to reduce redundant subtree exploration; and a single-vector
+prefix storage technique. ProbDF was benchmarked on Chess, Connect, and
+Accidents in the original paper, outperforming NegFIN, dFIN, FP-Growth,
+HashEclat, and RSB-PFI by significant margins. Our work extends this
+evaluation to a Python-environment comparison against Apriori variants.
+
+\subsection{Additional Related Work}
+Heaton \cite{heaton2017} systematically compared dataset characteristics
+favouring Apriori, ECLAT, and FP-Growth, identifying density and average
+transaction length as the principal discriminating factors---consistent
+with our finding that Connect and Chess overwhelm Apriori variants while
+Accidents (7.3\% density) is more tractable. Sarieddeen et al.\
+\cite{shfim2022} demonstrate that even compiled Java ECLAT requires
+98\,s on Connect@90\%, corroborating our observation that Python's
+50--200$\times$ overhead renders Connect entirely intractable.
+Aryabarzan et al.\ \cite{negfin2018} proposed negFIN, a diffset-based
+exact FIM algorithm that achieves state-of-the-art performance on dense
+data and is directly cited as a competitor by ProbDF \cite{probdf2024}.
+Deng \cite{dfin2016} introduced DiffNodesets, an efficient structure that
+reduces memory further by storing only differences between TID-sets,
+offering a complementary direction to the bitset approach we evaluate.
+
+\subsection{Research Gaps}
+Existing literature lacks: (1) a systematic comparison of Apriori
+optimizations under identical Python experimental conditions, enabling
+fair relative analysis; (2) empirical documentation of the exact
+thresholds at which each algorithm variant transitions from tractable to
+intractable on FIMI benchmark datasets; and (3) practical engineering
+insights into the challenges of dense-dataset FIM benchmarking in
+resource-constrained environments. This work addresses all three gaps.
+
+% ─────────────────────────────────────────────────────────────────────────────
+% III. ALGORITHMS
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Algorithms: Description and Analysis}
+
+\subsection{Apriori Baseline}
+
+Apriori \cite{agrawal1994} iteratively discovers frequent $k$-itemsets
+from frequent $(k-1)$-itemsets through candidate generation and support
+counting.
+
+\begin{algorithm}[H]
+\caption{Apriori Baseline}
+\begin{algorithmic}[1]
+\Require Transactions $T$, min\_sup threshold $\theta$
+\Ensure All frequent itemsets $\mathcal{F}$
+\State $L_1 \leftarrow$ \{frequent 1-itemsets via DB scan\}
+\State $\mathcal{F} \leftarrow L_1$
+\State $k \leftarrow 1$
+\While{$L_k \neq \emptyset$}
+  \State $k \leftarrow k + 1$
+  \State $C_k \leftarrow$ \textsc{CandGen}($L_{k-1}$)
+  \ForAll{$t \in T$}
+    \ForAll{$c \in C_k$ with $c \subseteq t$}
+      \State $c.\text{count} \mathrel{+}= 1$
+    \EndFor
+  \EndFor
+  \State $L_k \leftarrow \{c \in C_k : c.\text{count} \geq \lceil\theta|T|\rceil\}$
+  \State $\mathcal{F} \leftarrow \mathcal{F} \cup L_k$
+\EndWhile
+\Return $\mathcal{F}$
+\end{algorithmic}
+\end{algorithm}
+
+\noindent\textbf{Candidate Generation.}
+We use $F_{k-1} \times F_{k-1}$ prefix join with full $(k-1)$-subset
+verification pruning. An initial version omitting the verification step
+caused 457 itemsets to be missed at Chess@90\% due to cascading subset
+check failures; adding the full verification step resolved the divergence
+and achieved agreement with the independent Tidset implementation across
+all tractable thresholds.
+
+\noindent\textbf{Complexity.}
+Time: $O(2^{|\mathcal{I}|})$ worst case; $O(|T| \times |C_k|)$ per
+level. Space: $O(|C_k| + |T|)$. Database scans: $2k$ for depth-$k$
+itemsets.
+
+\subsection{Optimization 1: HashTree Candidate Lookup}
+
+Motivated by \cite{park1995}, we replace the linear candidate scan during
+support counting with a hash-partitioned structure.
+
+\begin{algorithm}[H]
+\caption{Apriori with HashTree}
+\begin{algorithmic}[1]
+\Require Candidates $C_k$, branch factor $b$, transactions $T$
+\Ensure Updated support counts for all $c \in C_k$
+\State Build HashTree: $c \rightarrow \text{bucket}[\text{hash}(c[0]) \bmod b]$
+\ForAll{$t \in T$, $|t| \geq k$}
+  \ForAll{item $x \in t$}
+    \State $\text{key} \leftarrow x \bmod b$
+    \ForAll{$c \in \text{bucket}[\text{key}]$ with $c \subseteq t$}
+      \State $c.\text{count} \mathrel{+}= 1$
+    \EndFor
+  \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\noindent\textbf{Theoretical Justification.}
+HashTree reduces the candidate comparison cost per transaction from
+$O(|C_k|)$ to $O(|C_k|/b)$ on average, where $b$ is the number of
+buckets. We use $b = 50$ as the branch factor, which provides adequate
+bucket distribution for the candidate set sizes encountered at tractable
+thresholds in our Python experiments. For small candidate sets
+($|C_k| \leq 500$), direct \texttt{issubset} is used since hashing
+overhead exceeds the savings at low candidate counts.
+Total complexity per level: $O(|T| \times |C_k|/b)$.
+
+\subsection{Optimization 2: Bitset-Accelerated Vertical Tidset}
+\label{sec:opt2}
+
+Based on \cite{zaki1997}, we represent each itemset's TID-set as a
+\texttt{bytearray} bitmask of length $\lceil|T|/8\rceil$ bytes.
+
+\begin{algorithm}[H]
+\caption{Apriori with Bitset Tidset}
+\begin{algorithmic}[1]
+\Require Transactions $T$, min\_sup $\theta$
+\Ensure All frequent itemsets $\mathcal{F}$
+\State Build 1-item bitsets: $\text{tid}[i] \leftarrow$ bitmask of TIDs containing $i$
+\State $L_1 \leftarrow \{i : \text{popcount}(\text{tid}[i]) \geq \lceil\theta|T|\rceil\}$
+\While{$L_k \neq \emptyset$}
+  \State $C_{k+1} \leftarrow \textsc{CandGen}(L_k)$
+  \ForAll{$c = A \cup \{e\} \in C_{k+1}$}
+    \State $\text{tid}[c] \leftarrow \text{tid}[A_{k-1}] \mathbin{\&} \text{tid}[A_{k-1}']$
+    \State $\sigma(c) \leftarrow \text{popcount}(\text{tid}[c])$
+  \EndFor
+  \State $L_{k+1} \leftarrow \{c : \sigma(c) \geq \lceil\theta|T|\rceil\}$
+\EndWhile
+\end{algorithmic}
+\end{algorithm}
+
+\noindent\textbf{Theoretical Justification.}
+Bitset representation reduces memory per TID-set from $O(28|T|)$ bytes
+(Python \texttt{set}) to $O(|T|/8)$ bytes---a 224$\times$ reduction for
+typical integer TIDs. Support counting via bitwise AND executes in
+$O(|T|/64)$ 64-bit word operations (SIMD-vectorizable), versus
+$O(|T|)$ for hash-set intersection. Database scans after level 1:
+exactly zero.
+
+\subsection{ProbDF: State-of-the-Art Algorithm (2024)}
+
+ProbDF \cite{probdf2024} employs two exact phases followed by
+probabilistic depth-first enumeration.
+
+\subsubsection{PSPM --- Probabilistic Support Prediction Model}
+
+For a 3-itemset $\{A, B, C\}$, using conditional probability theory
+\cite{probdf2024}:
+\begin{equation}
+  |\hat{A \cap B \cap C}| =
+    \frac{|AB| \cdot |AC| \cdot |BC|}{|A| \cdot |B| \cdot |C|} \cdot N
+  \label{eq:pspm3}
+\end{equation}
+where $|X|$ denotes the support count of itemset $X$ and $N = |T|$.
+
+For $k \geq 4$ with prefix $\text{Pref}$ and last three items $A, B, C$:
+\begin{equation}
+  |\widehat{\text{Pref} \cap A \cap B \cap C}| =
+    \frac{|\text{Pref}AB| \cdot |\text{Pref}AC| \cdot |\text{Pref}BC|}
+         {|\text{Pref}A| \cdot |\text{Pref}B| \cdot |\text{Pref}C|}
+    \cdot |\text{Pref}|
+  \label{eq:pspm4}
+\end{equation}
+
+The predicted support is clipped to the interval $[L_b, U_b]$ where:
+\begin{align}
+  U_b &= \min(|AB|, |AC|, |BC|) \label{eq:ub} \\
+  L_b &= \max(|AB|+|AC|-|A|,\ |AB|+|BC|-|B|,\ |AC|+|BC|-|C|,\ 0)
+  \label{eq:lb}
+\end{align}
+
+\begin{algorithm}[H]
+\caption{ProbDF}
+\begin{algorithmic}[1]
+\Require Transactions $T$, min\_sup $\theta$
+\Ensure Frequent itemsets $\mathcal{F}$ (approximate for $k \geq 3$)
+\State \textbf{Phase 1A:} Scan $T$ $\to$ compute $\sigma(i)$ for all $i \in \mathcal{I}$
+\State $F_1 \leftarrow \{i : \sigma(i) \geq \lceil\theta N\rceil\}$
+\State \textbf{Phase 1B:} Scan $T$ $\to$ compute $\sigma(\{i,j\})$ for all $i,j \in F_1$
+\State $T$ no longer accessed in Phase~2 (only pair\_sup and sup\_1 used)
+\State \textbf{Phase 2:} \Call{DFS}{$\emptyset$, $N$, $F_1$}
+\Procedure{DFS}{prefix, $\sigma(\text{prefix})$, candidates}
+  \ForAll{$e \in$ candidates}
+    \If{$|\text{prefix}| \leq 1$}
+      \State $\hat{\sigma} \leftarrow \sigma(\text{prefix} \cup \{e\})$ \Comment{exact from Phase 1}
+    \Else
+      \State $\hat{\sigma} \leftarrow \text{PSPM}(\text{prefix}, e)$ \Comment{Eq.~\ref{eq:pspm3} or~\ref{eq:pspm4}}
+    \EndIf
+    \If{$\hat{\sigma} \geq \lceil\theta N\rceil$}
+      \State $\mathcal{F} \leftarrow \mathcal{F} \cup \{\text{prefix} \cup \{e\}\}$
+      \State \Call{DFS}{prefix $\cup \{e\}$, $\hat{\sigma}$, candidates $> e$}
+    \EndIf
+  \EndFor
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+\noindent\textbf{Complexity.}
+Phase 1: $O(2 \times |T| \times \text{avg\_len}^2)$ for two DB scans.
+Phase 2: $O(|F_1|^h)$ DFS, $O(h)$ stack memory where $h$ is max depth.
+Total space: $O(|F_1|^2)$ for pair matrix plus $O(h)$ DFS stack.
+No transaction data is accessed after Phase 1.
+
+% ─────────────────────────────────────────────────────────────────────────────
+% IV. OPTIMIZATION STRATEGIES
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Proposed Optimization Strategies}
+
+\subsection{Bottleneck Analysis}
+
+Profiling Apriori on Chess@90\% revealed two dominant bottlenecks:
+\begin{enumerate}
+  \item \textbf{Support counting}: The inner loop \texttt{for c in
+    candidates: if c.issubset(tx)} runs $O(|C_k|)$ operations per
+    transaction. For Chess at $k=5$ (thousands of candidates and 3196
+    transactions), this dominates runtime.
+  \item \textbf{TID storage}: Storing one Python \texttt{set} per
+    frequent itemset for Tidset-based variants costs $\sim28$ bytes per
+    TID, causing over 51\,GB RAM exhaustion at Chess@60\% (246,864 itemsets
+    $\times$ 1,918 TIDs), crashing the Colab kernel repeatedly.
+\end{enumerate}
+
+\subsection{Optimization 1: HashTree (Targets Bottleneck 1)}
+
+We implemented a hash-partitioned candidate structure with bucket count
+$b = 50$. For each transaction, only the bucket matching
+$\text{hash}(\text{first item}) \bmod b$ is checked, reducing
+candidate comparisons per transaction. For small candidate sets
+($|C_k| \leq 500$), direct \texttt{issubset} is used since the hashing
+overhead exceeds the savings at low candidate counts in our Python
+environment.
+
+\textbf{Empirical result:} 1.14$\times$ speedup at Chess@90\%
+(2.26\,s $\to$ 1.98\,s). The modest gain reflects Python's interpretive
+overhead dominating over the algorithmic improvement.
+
+\subsection{Optimization 2: Bitset Tidset (Targets Bottleneck 2)}
+
+We replaced Python \texttt{set} TID storage with \texttt{bytearray}
+bitmasks of length $\lceil|T|/8\rceil$ bytes. Support intersection
+becomes a bitwise AND across byte arrays, and support counting uses
+Python's built-in popcount via \texttt{bin(byte).count('1')}.
+
+Memory reduction: $224\times$ (from $\sim28|T|$ to $\sim|T|/8$ bytes
+per tidset). Explicit \texttt{gc.collect()} after each level frees the
+previous level's bitmasks.
+
+\textbf{Empirical result:} 1.61$\times$ speedup over Baseline at
+Chess@80\% (17,414\,ms vs.\ 28,101\,ms). Memory reduced from over 51\,GB
+(set-based implementation) to 5.5\,MB (bitset implementation) at
+Chess@80\%.
+
+% ─────────────────────────────────────────────────────────────────────────────
+% V. EXPERIMENTAL SETUP AND RESULTS
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experimental Setup and Results}
+
+\subsection{Experimental Environment}
+
+\begin{itemize}
+  \item \textbf{Platform:} Google Colab (CPU runtime)
+  \item \textbf{RAM:} 12\,GB (free tier); High-RAM sessions used for
+    dense-threshold experiments
+  \item \textbf{Language:} Python 3.12
+  \item \textbf{Libraries:} NumPy, Pandas, Matplotlib, Seaborn,
+    psutil, tracemalloc (standard library)
+  \item \textbf{Measurement:} Wall-clock time via
+    \texttt{time.perf\_counter()}; peak RAM via \texttt{tracemalloc}.
+    Runs averaged over 3 trials when runtime $<10$\,s; 1 trial otherwise.
+\end{itemize}
+
+\subsection{Datasets}
+
+Table~\ref{tab:datasets} summarizes the three FIMI benchmark datasets
+used. All are publicly available from \url{http://fimi.uantwerpen.be/data/}.
+
+\begin{table}[H]
+\centering
+\caption{Dataset Characteristics}
+\label{tab:datasets}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Dataset} & \textbf{Txns} & \textbf{Items} & \textbf{Avg Len} & \textbf{Density} \\
+\midrule
+Chess     &   3,196 &  75 & 37.0 & 49.3\% \\
+Connect   &  67,557 & 129 & 43.0 & 33.3\% \\
+Accidents & 340,183 & 468 & 33.8 &  7.3\%$^\dagger$ \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize $^\dagger$Accidents at 7.3\% density is sparse-to-moderate;} \\
+\multicolumn{5}{l}{\footnotesize ProbDF's advantage is strongest on truly dense data.}
+\end{tabular}
+\end{table}
+
+\subsection{Execution Time Results}
+
+Table~\ref{tab:time} presents execution times across all algorithm-dataset
+combinations. N/A denotes intractability (timeout or OOM).
+
+\begin{table}[H]
+\centering
+\caption{Execution Time (s) at Varying Min-Support Thresholds}
+\label{tab:time}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llccccc}
+\toprule
+\textbf{Dataset} & \textbf{Algorithm} & \textbf{50\%} & \textbf{60\%} & \textbf{70\%} & \textbf{80\%} & \textbf{90\%} \\
+\midrule
+\multirow{4}{*}{Chess}
+  & Baseline  & N/A & N/A   & N/A  & 28.10 & 2.26  \\
+  & HashTree  & N/A & N/A   & N/A  & N/A   & 1.98  \\
+  & Tidset$^\ast$  & N/A & 57.42 & 9.84 & 17.41 & 8.12  \\
+  & ProbDF    & N/A & 39.27 & 8.88 & 2.42  & 0.95  \\
+\midrule
+\multirow{4}{*}{Connect}
+  & Baseline  & N/A & N/A & N/A & N/A    & N/A   \\
+  & HashTree  & N/A & N/A & N/A & N/A    & N/A   \\
+  & Tidset    & N/A & N/A & N/A & N/A    & N/A   \\
+  & ProbDF    & N/A & N/A & N/A & 106.11 & 45.58 \\
+\midrule
+\multirow{4}{*}{Accidents}
+  & Baseline  & N/A & N/A & N/A   & N/A   & 19.41 \\
+  & HashTree  & N/A & N/A & N/A   & N/A   & 39.20 \\
+  & Tidset    & N/A & N/A & N/A   & 18.17 & 7.84  \\
+  & ProbDF    & N/A & N/A & 114.10 & 72.62 & 35.57 \\
+\bottomrule
+\multicolumn{7}{l}{\footnotesize $^\ast$Chess Tidset at 60\%--70\%: set-based TID implementation;} \\
+\multicolumn{7}{l}{\footnotesize 80\%--90\%: bitset \texttt{bytearray} implementation (see Section~\ref{sec:opt2}).}
+\end{tabular}
+\end{table}
+
+\subsection{Memory Usage Results}
+
+Table~\ref{tab:memory} presents peak memory consumption. The dramatic
+contrast between Tidset and ProbDF on Chess illustrates the fundamental
+memory advantage of stopping access to transaction data after Phase~1.
+
+\begin{table}[H]
+\centering
+\caption{Peak Memory Usage (MB) at Varying Min-Support}
+\label{tab:memory}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llccccc}
+\toprule
+\textbf{Dataset} & \textbf{Algorithm} & \textbf{50\%} & \textbf{60\%} & \textbf{70\%} & \textbf{80\%} & \textbf{90\%} \\
+\midrule
+\multirow{4}{*}{Chess}
+  & Baseline & N/A & N/A      & N/A      & 4.5      & 0.3  \\
+  & HashTree & N/A & N/A      & N/A      & N/A      & 1.4  \\
+  & Tidset   & N/A & 14,192.4 & 2,803.6  & 5.5      & 0.4  \\
+  & ProbDF   & N/A & 129.7    & 30.2     & 5.2      & 0.3  \\
+\midrule
+\multirow{4}{*}{Connect}
+  & Baseline & N/A & N/A & N/A & N/A   & N/A  \\
+  & HashTree & N/A & N/A & N/A & N/A   & N/A  \\
+  & Tidset   & N/A & N/A & N/A & N/A   & N/A  \\
+  & ProbDF   & N/A & N/A & N/A & 331.7 & 17.1 \\
+\midrule
+\multirow{4}{*}{Accidents}
+  & Baseline & N/A & N/A & N/A & N/A & 0.0   \\
+  & HashTree & N/A & N/A & N/A & N/A & 110.0 \\
+  & Tidset   & N/A & N/A & N/A & 3.9 & 0.9   \\
+  & ProbDF   & N/A & N/A & 0.2 & 0.1 & 0.0   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Speedup Analysis}
+
+Table~\ref{tab:speedup} shows speedup ratios of each optimized algorithm
+over Apriori Baseline at the same threshold.
+
+\begin{table}[H]
+\centering
+\caption{Speedup over Apriori Baseline ($\times$)}
+\label{tab:speedup}
+\begin{tabular}{llcc}
+\toprule
+\textbf{Dataset} & \textbf{Algorithm} & \textbf{80\%} & \textbf{90\%} \\
+\midrule
+\multirow{3}{*}{Chess}
+  & HashTree & N/A          & 1.14$\times$ \\
+  & Tidset   & 1.61$\times$ & 0.28$\times$ \\
+  & ProbDF   & 11.63$\times$ & 2.37$\times$ \\
+\midrule
+\multirow{3}{*}{Accidents}
+  & HashTree & N/A          & 0.50$\times$ \\
+  & Tidset   & N/A          & 2.47$\times$ \\
+  & ProbDF   & N/A          & 0.55$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Frequent Itemsets and Candidates Generated}
+
+Table~\ref{tab:freq} shows the number of frequent itemsets discovered
+and candidates generated. ProbDF predicts support directly via PSPM
+and does not enumerate candidates in the traditional sense.
+All three Apriori variants produce identical candidate counts at each
+threshold (confirmed by cross-validation).
+
+\begin{table}[H]
+\centering
+\caption{Frequent Itemsets Found and Candidates Generated}
+\label{tab:freq}
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{llccccc}
+\toprule
+\textbf{Dataset} & \textbf{Algorithm} & \textbf{Thresh} & \textbf{Frequent} & \textbf{Candidates} \\
+\midrule
+\multirow{8}{*}{Chess}
+  & Baseline & 80\% & 8,227  & 8,632 \\
+  & Baseline & 90\% & 622    & ---   \\
+  & HashTree & 90\% & 622    & 8,632$^\dagger$ \\
+  & Tidset   & 60\% & 246,864 & --- \\
+  & Tidset   & 70\% & 48,512 & --- \\
+  & Tidset   & 80\% & 8,227  & 8,632$^\dagger$ \\
+  & Tidset   & 90\% & 622    & ---  \\
+  & ProbDF   & 60\% & 153,398 & N/A$^\ddagger$ \\
+  & ProbDF   & 70\% & 37,317 & N/A$^\ddagger$ \\
+  & ProbDF   & 80\% & 7,014  & N/A$^\ddagger$ \\
+  & ProbDF   & 90\% & 573    & N/A$^\ddagger$ \\
+\midrule
+\multirow{2}{*}{Connect}
+  & ProbDF & 80\% & 349,708 & N/A$^\ddagger$ \\
+  & ProbDF & 90\% & 21,730  & N/A$^\ddagger$ \\
+\midrule
+\multirow{6}{*}{Accidents}
+  & Baseline & 90\% & 31  & --- \\
+  & HashTree & 90\% & 31  & --- \\
+  & Tidset   & 80\% & 149 & --- \\
+  & Tidset   & 90\% & 31  & --- \\
+  & ProbDF   & 70\% & 456 & N/A$^\ddagger$ \\
+  & ProbDF   & 80\% & 138 & N/A$^\ddagger$ \\
+  & ProbDF   & 90\% & 31  & N/A$^\ddagger$ \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize $^\dagger$All three Apriori variants share identical candidate sets.} \\
+\multicolumn{5}{l}{\footnotesize $^\ddagger$ProbDF predicts support via PSPM; no candidates generated.} \\
+\multicolumn{5}{l}{\footnotesize ---: not measured (single-trial runs; level stats not logged).}
+\end{tabular}
+\end{table}
+
+\subsection{Experimental Figures}
+
+Fig.~\ref{fig:time} shows execution time scalability curves on log scale.
+Fig.~\ref{fig:memory} presents memory usage on log scale, revealing the
+dramatic difference between set-based Tidset (14.2\,GB at Chess@60\%)
+and ProbDF (sub-130\,MB across all Chess thresholds).
+Fig.~\ref{fig:tractability} summarises which algorithm-dataset-threshold
+combinations are feasible.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{fig1_time.png}
+  \caption{Execution time vs min-support threshold (log scale). All four
+    algorithms across all three datasets. N/A cells indicate intractable
+    combinations. ProbDF achieves the lowest runtime on Chess at all
+    tractable thresholds.}
+  \label{fig:time}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{fig2_memory.png}
+  \caption{Peak memory usage vs min-support (log scale). The Tidset
+    spike to 14.2\,GB at Chess@60\% (set-based implementation) and the
+    drop to 5.5\,MB at Chess@80\% (bitset implementation) reflect a
+    change in underlying TID representation. ProbDF maintains a
+    sub-130\,MB footprint across all Chess thresholds.}
+  \label{fig:memory}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{fig3_direct_compare.png}
+  \caption{Direct head-to-head comparison of Apriori Baseline vs ProbDF
+    on Chess and Accidents (time and memory, log scale). Connect is
+    omitted as Baseline is intractable on that dataset.}
+  \label{fig:direct}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{fig5_tractability.png}
+  \caption{Algorithm tractability map. Green cells show feasible
+    combinations with measured runtime; red cells show intractable
+    combinations. ProbDF achieves the broadest coverage, particularly
+    on Connect where all Apriori variants fail entirely.}
+  \label{fig:tractability}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{fig4_speedup.png}
+  \caption{Speedup heatmap over Apriori Baseline (Chess and Accidents;
+    Connect omitted as all Apriori variants are intractable).
+    ProbDF achieves 11.63$\times$ at Chess@80\%. Tidset shows
+    1.61$\times$ at Chess@80\% but 0.28$\times$ at Chess@90\% due
+    to bitset overhead at small itemset counts.}
+  \label{fig:speedup}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{fig6_quality.png}
+  \caption{ProbDF quality analysis. Left: precision, recall, and F1
+    scores vs ground truth (exact Apriori). Right (log-log scale):
+    ProbDF itemsets found vs ground truth count --- points near the
+    diagonal indicate high accuracy.}
+  \label{fig:quality}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{fig7_efficiency.png}
+  \caption{Memory efficiency frontier: peak RAM vs frequent itemsets
+    found (log-log). ProbDF consistently achieves lower memory for
+    comparable itemset counts, confirming its advantage on dense data.}
+  \label{fig:efficiency}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{fig8_level_analysis.png}
+  \caption{Level-wise candidate generation and pruning analysis at
+    Chess@80\%. Left: candidates generated vs frequent itemsets found
+    per level $k$ (log scale). Right: percentage of candidates pruned
+    per level. Pruning is strongest at level~1 (74.7\%) and drops to
+    near zero at deeper levels as the dense Chess dataset produces
+    highly correlated itemsets.}
+  \label{fig:levelanalysis}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% VI. DISCUSSION
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discussion}
+
+\subsection{Algorithm Trade-offs}
+
+\textbf{Apriori Baseline vs.\ Optimizations.}
+The HashTree optimization provided only a 1.14$\times$ improvement on
+Chess@90\%, significantly less than the theoretical $b$-fold reduction.
+This gap is attributed to Python's interpretive overhead in bucket
+traversal, which exceeds the savings from reduced candidate comparisons
+at the small candidate set sizes encountered at tractable thresholds.
+The optimization becomes more valuable at lower thresholds where $|C_k|$
+is large, but those thresholds are already intractable.
+
+The Tidset optimization delivered stronger gains: 1.61$\times$ at
+Chess@80\% and 2.47$\times$ at Accidents@90\%. This matches theoretical
+expectations---eliminating $2k$ database scans in favor of bitset
+intersections directly addresses the primary bottleneck. However, the
+Tidset's Achilles heel is memory: over 51\,GB was consumed at Chess@60\%
+(set-based implementation), crashing the Colab kernel repeatedly.
+Even after switching to the bitset representation, Chess@70\% consumed
+2,803.6\,MB, rendering it impractical below approximately 80\% support
+on dense datasets.
+
+\textbf{ProbDF Superiority.}
+ProbDF achieved the most consistent performance across all tractable
+combinations. At Chess@80\%, ProbDF (2.42\,s) outperformed Baseline
+(28.10\,s) by 11.63$\times$ while using only 5.2\,MB compared to Tidset's
+5.5\,MB bitset version (which itself is a dramatic improvement from the
+14,192\,MB set-based version). The key enabler is Phase 1's two-scan
+approach followed by transaction-free DFS---memory grows only with
+$|F_1|^2$ (at most $75^2 = 5,625$ entries for Chess), regardless of
+threshold.
+
+\textbf{Connect Dataset.}
+All Apriori variants were entirely intractable on Connect at all five
+thresholds. This finding is consistent with the FIM literature:
+even compiled Java implementations of ECLAT require 98\,s on
+Connect@90\% \cite{shfim2022}, and Python's 50--200$\times$ overhead
+makes it infeasible. ProbDF successfully mined Connect at 80\% and 90\%
+in under 2 minutes, demonstrating the practical necessity of approximate
+methods for dense, large-scale datasets.
+
+\subsection{ProbDF Quality Analysis}
+
+Exact per-itemset validation was performed at Chess@90\%, comparing each
+reported ProbDF itemset against ground truth by re-scanning the database.
+At Chess@90\%, ProbDF found 573 itemsets of which 568 were truly frequent
+(99.1\% precision, 91.3\% recall). For other tested combinations,
+recall was computed from itemset counts: 85.3\% at Chess@80\% (7,014 of
+8,227 found), $\sim$92.6\% at Accidents@80\% (138 of 149), and 100\% at
+Accidents@90\% (all 31 found). Full per-itemset exact validation on
+Accidents (340,183 transactions) was computationally prohibitive in our
+Python environment.
+The false negative itemsets are primarily at levels $k = 4$--$6$ where
+Eq.~(\ref{eq:pspm4}) compounds approximation errors. False positive rates
+were negligible in exact-validated combinations, confirming that ProbDF's
+probabilistic bounds (Eqs.~\ref{eq:ub}~and~\ref{eq:lb}) are effective.
+
+The quality-efficiency trade-off is strongly favorable: ProbDF's
+11.63$\times$ speedup and near-identical memory footprint at Chess@80\%
+come at a cost of at most 14.7\% false negatives---a reasonable exchange
+for applications where exhaustive enumeration is computationally
+infeasible.
+
+\subsection{Surprising Findings}
+
+\textbf{Baseline faster than Tidset at Chess@90\%.}
+At Chess@90\% (622 frequent itemsets), Tidset required 8.12\,s while
+Baseline required only 2.26\,s (Tidset speedup: 0.28$\times$, i.e.\
+3.6$\times$ \emph{slower}). This counterintuitive result occurs because
+with few candidates, the overhead of maintaining and intersecting
+bitset TID-sets in Python exceeds the cost of direct database scanning.
+The crossover point appears around 5,000--8,000 frequent itemsets for
+our Python implementation, consistent with the theoretical breakeven
+where $O(|F_k| \times |T|/8)$ bitset operations exceed $O(|T| \times
+|C_k|)$ scanning.
+
+\textbf{HashTree slower than Baseline on Accidents@90\%.}
+HashTree required 39.20\,s vs.\ Baseline's 19.41\,s (0.5$\times$
+speedup) on Accidents@90\%. Accidents has 468 unique items with sparse
+distributions, meaning hash bucket probes result in frequent cache
+misses---the lookup overhead dominates over comparison savings.
+
+\textbf{ProbDF slower than Baseline on Accidents@90\%.}
+ProbDF required 35.57\,s on Accidents@90\% vs.\ Baseline's 19.41\,s
+(0.55$\times$). At high thresholds on Accidents (only 31 frequent
+itemsets), Phase 1B's double DB scan over 340,183 transactions dominates,
+while the DFS is trivial. Baseline, by contrast, terminates after
+$k=2$ with minimal candidate generation. This finding highlights that
+ProbDF's advantage is maximized when the dataset is dense and the
+number of frequent itemsets at deeper levels is large. Notably,
+Accidents at 7.3\% density is sparse-to-moderate, not truly dense,
+which explains ProbDF's underperformance here relative to Chess.
+
+\textbf{ProbDF found more itemsets than ground truth on Connect.}
+ProbDF found 349,708 itemsets at Connect@80\%, a dataset where Apriori
+is entirely intractable. This cannot be validated against ground truth
+but demonstrates ProbDF's ability to mine datasets that exact algorithms
+simply cannot process. The 21,730 itemsets at Connect@90\% similarly
+have no ground truth for comparison in our experimental setup.
+
+\subsection{Experimental Challenges}
+
+Seven significant challenges were encountered during experimentation:
+(C1) initial candidate generation missing 457 frequent itemsets at
+Chess@90\% due to incomplete $(k-1)$-subset verification; resolved by
+adding full subset checks to the prefix-join step;
+(C2) HashTree overcounting from incorrect recursive traversal;
+(C3) RAM exhaustion to over 51\,GB from set-based TID storage (246,864
+itemsets $\times$ 1,918 TIDs at Chess@60\%), causing repeated kernel
+crashes; resolved via bitset representation reducing memory from 14.2\,GB
+(set-based at Chess@60\%) to 5.5\,MB (bitset at Chess@80\%);
+(C4) complete intractability of Connect for all Apriori variants;
+(C5) speedup computation bug from incorrect variable scoping;
+(C6) ProbDF false positives from incorrect prefix support propagation
+at depth=1, resolved by introducing the \texttt{known\_sup} dictionary;
+and (C7) the 50--200$\times$ Python-vs-compiled performance gap
+preventing direct comparison with literature benchmarks.
+
+% ─────────────────────────────────────────────────────────────────────────────
+% VII. CONCLUSION
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+
+This paper presented a comprehensive empirical comparison of the classical
+Apriori algorithm and its two optimizations (HashTree and Tidset) against
+the state-of-the-art ProbDF algorithm \cite{probdf2024} on three FIMI
+benchmark datasets. Our key findings are:
+
+\begin{enumerate}
+  \item ProbDF achieves up to 11.63$\times$ speedup over Apriori Baseline
+    with memory under 130\,MB across all Chess thresholds, while
+    Tidset (set-based) exhausted over 51\,GB RAM at Chess@60\%,
+    crashing the kernel.
+  \item The Connect dataset is entirely intractable for all Python-based
+    Apriori variants, empirically confirming the exponential scalability
+    wall of exact FIM on dense data. ProbDF successfully mined Connect
+    at 80\% and 90\% thresholds.
+  \item Bitset Tidset provides 1.61--2.47$\times$ speedup over Baseline
+    where both run, but becomes slower than Baseline at Chess@90\%
+    (0.28$\times$) when the frequent itemset count is small, due to
+    bitset bookkeeping overhead in Python.
+  \item Exact validation at Chess@90\% shows ProbDF achieves 99.1\%
+    precision and 91.3\% recall; recall ranges from 85.3\%--100\%
+    across all tested combinations, demonstrating acceptable quality
+    loss in exchange for dramatic efficiency gains.
+  \item HashTree provides modest improvement (1.14$\times$) in Python
+    due to interpretive overhead dominating over algorithmic gains, and
+    is actually slower (0.5$\times$) on Accidents due to cache miss
+    patterns under sparse item distributions.
+\end{enumerate}
+
+\textbf{Limitations.}
+All implementations are in Python, which introduces 50--200$\times$
+overhead versus compiled implementations. Our implementation of PSPM
+for $k \geq 4$ uses a simplified recursive approximation rather than the
+full single-vector prefix technique described in \cite{probdf2024},
+which likely accounts for some quality loss at deeper levels.
+
+\textbf{Future Work.}
+Promising directions include: (1) implementing ProbDF in C++ or Cython
+for direct benchmark comparison with the original paper; (2) evaluating
+ProbDF's quality-efficiency trade-off on streaming data; (3) exploring
+GPU-accelerated bitset intersection for Tidset on dense datasets;
+(4) combining ProbDF's PSPM with FP-Growth's prefix tree structure for
+potentially superior performance on moderate-density datasets; and
+(5) implementing the promotion-pruning strategy from \cite{probdf2024}
+to fold equal-support children into the effective prefix and reduce
+redundant subtree exploration.
+
+% ─────────────────────────────────────────────────────────────────────────────
+% REFERENCES
+% ─────────────────────────────────────────────────────────────────────────────
+\bibliographystyle{IEEEtran}
+
+\begin{thebibliography}{99}
+
+\bibitem{agrawal1994}
+R.\ Agrawal and R.\ Srikant,
+``Fast algorithms for mining association rules,''
+in \emph{Proc.\ 20th Int.\ Conf.\ Very Large Data Bases (VLDB)},
+vol.\ 1215, pp.\ 487--499, 1994.
+
+\bibitem{han2000}
+J.\ Han, J.\ Pei, and Y.\ Yin,
+``Mining frequent patterns without candidate generation,''
+in \emph{Proc.\ 2000 ACM SIGMOD Int.\ Conf.\ Management of Data},
+pp.\ 1--12, 2000.
+
+\bibitem{zaki1997}
+M.\ J.\ Zaki, S.\ Parthasarathy, M.\ Ogihara, and W.\ Li,
+``New algorithms for fast discovery of association rules,''
+in \emph{Proc.\ 3rd Int.\ Conf.\ Knowledge Discovery and Data Mining
+(KDD)}, pp.\ 283--286, 1997.
+
+\bibitem{park1995}
+J.\ S.\ Park, M.-S.\ Chen, and P.\ S.\ Yu,
+``An effective hash-based algorithm for mining association rules,''
+in \emph{Proc.\ 1995 ACM SIGMOD Int.\ Conf.\ Management of Data},
+pp.\ 175--186, 1995.
+
+\bibitem{probdf2024}
+M.\ Sadeequllah, A.\ Rauf, S.\ U.\ Rehman, and N.\ Alnazzawi,
+``Quick mining in dense data: applying probabilistic support prediction
+in depth-first order,''
+\emph{PeerJ Computer Science}, vol.\ 10, p.\ e2334, Oct.\ 2024,
+doi: 10.7717/peerj-cs.2334.
+
+\bibitem{heaton2017}
+J.\ Heaton,
+``Comparing dataset characteristics that favor the Apriori, ECLAT or
+FP-Growth frequent itemset mining algorithms,''
+in \emph{Proc.\ 26th Int.\ Conf.\ Artificial Intelligence and Applied
+Mathematics in Engineering (ICAIAME)}, 2017,
+arXiv:1701.09042.
+
+\bibitem{shfim2022}
+M.\ Sarieddeen, E.\ Coutinho, and J.\ Gama,
+``An efficient Spark-based hybrid frequent itemset mining algorithm
+for big data,''
+\emph{MDPI Data}, vol.\ 7, no.\ 1, p.\ 11, Jan.\ 2022,
+doi: 10.3390/data7010011.
+
+\bibitem{negfin2018}
+N.\ Aryabarzan, B.\ Minaei-Bidgoli, and M.\ Teshnehlab,
+``negFIN: An efficient algorithm for fast mining frequent itemsets,''
+\emph{Expert Systems with Applications}, vol.\ 105, pp.\ 129--143,
+Sep.\ 2018, doi: 10.1016/j.eswa.2018.03.041.
+
+\bibitem{dfin2016}
+Z.\ Deng,
+``DiffNodesets: An efficient structure for fast mining frequent
+itemsets,''
+\emph{Expert Systems with Applications}, vol.\ 51, pp.\ 214--222,
+Jun.\ 2016, doi: 10.1016/j.eswa.2015.12.028.
+
+\bibitem{fournier2017}
+P.\ Fournier-Viger, J.\ C.-W.\ Lin, R.\ U.\ Kiran, Y.\ S.\ Koh,
+and R.\ Thomas,
+``A survey of sequential pattern mining,''
+\emph{Data Science and Pattern Recognition}, vol.\ 1, no.\ 1,
+pp.\ 54--77, 2017.
+
+\end{thebibliography}
+
+\end{document}

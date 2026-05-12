@@ -1,0 +1,64 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ─── Jupyter Notebook ─────────────────────────────────────────────────────────
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# ─── Virtual Environments ────────────────────────────────────────────────────
+venv/
+env/
+ENV/
+.venv/
+
+# ─── Data Files (don't commit raw datasets — too large) ──────────────────────
+data/*.dat
+data/*.gz
+data/*.zip
+data/raw/
+!data/README.md
+
+# ─── Saved Results (don't commit large pkl files) ────────────────────────────
+results/*.pkl
+results/*.npz
+*.pkl
+
+# ─── LaTeX Build Artifacts ───────────────────────────────────────────────────
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
+report/*.bbl
+report/*.blg
+report/*.synctex.gz
+report/*.fdb_latexmk
+report/*.fls
+
+# ─── OS Files ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── IDE Files ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── Colab/Drive Specific ────────────────────────────────────────────────────
+.config/
+sample_data/
+drive/
+
+# ─── Project-Specific Outputs ────────────────────────────────────────────────
+*.tmp
+*.bak
+*.log
